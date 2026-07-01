@@ -1,0 +1,19 @@
+[package]
+name = "hive-router-federated-token"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Hive Router plugin porting @labdigital/federated-token gateway auth (JWE/JWS cookies + subgraph token round-trip)."
+repository = "https://github.com/evolve-platform/hive-router-federated-token"
+
+[lib]
+
+[dependencies]
+# Must match the hive-router version of the binary that registers this plugin
+# (the RouterPlugin trait/hook types have to line up). Pre-1.0 — bump deliberately.
+hive-router = { git = "https://github.com/graphql-hive/router", tag = "hive-router/v0.0.77" }
+
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+josekit = "0.10"
+base64 = "0.22"
