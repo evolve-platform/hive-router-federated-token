@@ -71,19 +71,16 @@ impl FederatedToken {
     pub fn serialize_access_token(&self) -> Option<String> {
         let mut map = serde_json::Map::new();
         if !self.tokens.is_empty() {
-            map.insert(
-                "tokens".into(),
-                serde_json::to_value(&self.tokens).ok()?,
-            );
+            map.insert("tokens".into(), serde_json::to_value(&self.tokens).ok()?);
         }
         if !self.values.is_empty() {
-            map.insert(
-                "values".into(),
-                serde_json::to_value(&self.values).ok()?,
-            );
+            map.insert("values".into(), serde_json::to_value(&self.values).ok()?);
         }
         if self.is_authenticated {
-            map.insert(FederatedTokenValue::IS_AUTHENTICATED.into(), Value::Bool(true));
+            map.insert(
+                FederatedTokenValue::IS_AUTHENTICATED.into(),
+                Value::Bool(true),
+            );
         }
         if self.destroy_token {
             map.insert(FederatedTokenValue::DESTROY_TOKEN.into(), Value::Bool(true));
@@ -177,7 +174,11 @@ impl FederatedToken {
         let Ok(incoming) = serde_json::from_slice::<BTreeMap<String, String>>(&raw) else {
             return;
         };
-        if track_modified && incoming.iter().any(|(k, v)| self.refresh_tokens.get(k) != Some(v)) {
+        if track_modified
+            && incoming
+                .iter()
+                .any(|(k, v)| self.refresh_tokens.get(k) != Some(v))
+        {
             self.refresh_token_modified = true;
         }
         self.refresh_tokens.extend(incoming);
@@ -232,7 +233,9 @@ mod tests {
         t.tokens.insert("catalog".into(), sample_token());
 
         let mut incoming = FederatedToken::new();
-        incoming.tokens.insert("commercetools".into(), sample_token());
+        incoming
+            .tokens
+            .insert("commercetools".into(), sample_token());
         incoming.is_authenticated = true;
         let wire = incoming.serialize_access_token().unwrap();
 
@@ -252,7 +255,9 @@ mod tests {
         // written — which the storefront needs to detect a session.
         let mut t = FederatedToken::new();
         let mut incoming = FederatedToken::new();
-        incoming.tokens.insert("commercetools".into(), sample_token());
+        incoming
+            .tokens
+            .insert("commercetools".into(), sample_token());
         let wire = incoming.serialize_access_token().unwrap();
         assert!(
             !wire_contains_values(&wire),
@@ -261,7 +266,10 @@ mod tests {
 
         t.deserialize_access_token(&wire, true);
 
-        assert!(t.value_modified, "absent values key must mark value modified");
+        assert!(
+            t.value_modified,
+            "absent values key must mark value modified"
+        );
         assert!(t.values.is_empty());
     }
 
@@ -274,13 +282,17 @@ mod tests {
     #[test]
     fn refresh_token_wire_roundtrips() {
         let mut t = FederatedToken::new();
-        t.refresh_tokens.insert("commercetools".into(), "refresh-abc".into());
+        t.refresh_tokens
+            .insert("commercetools".into(), "refresh-abc".into());
 
         let wire = t.dump_refresh_token().unwrap();
         let mut loaded = FederatedToken::new();
         loaded.load_refresh_token(&wire, true);
 
-        assert_eq!(loaded.refresh_tokens.get("commercetools").unwrap(), "refresh-abc");
+        assert_eq!(
+            loaded.refresh_tokens.get("commercetools").unwrap(),
+            "refresh-abc"
+        );
         assert!(loaded.refresh_token_modified);
     }
 }

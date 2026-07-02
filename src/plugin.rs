@@ -86,7 +86,9 @@ impl RouterPlugin for FederatedTokenPlugin {
                     token.tokens = tokens;
                     token.is_authenticated = is_authenticated;
                 }
-                Err(e) => return payload.end_with_graphql_error(e.graphql_error(), e.status_code()),
+                Err(e) => {
+                    return payload.end_with_graphql_error(e.graphql_error(), e.status_code())
+                }
             }
         }
 
@@ -116,7 +118,9 @@ impl RouterPlugin for FederatedTokenPlugin {
         if let Some(data) = data {
             match self.signer.verify_data(&data) {
                 Ok(values) => token.values = values,
-                Err(e) => return payload.end_with_graphql_error(e.graphql_error(), e.status_code()),
+                Err(e) => {
+                    return payload.end_with_graphql_error(e.graphql_error(), e.status_code())
+                }
             }
         }
 
@@ -250,24 +254,41 @@ impl FederatedTokenPlugin {
         };
 
         if t.destroy_token {
-            out.cookies.push(build_set_cookie(&deletion(USER_TOKEN, true, "/"), cfg));
-            out.cookies.push(build_set_cookie(&deletion(GUEST_TOKEN, true, "/"), cfg));
-            out.cookies.push(build_set_cookie(&deletion(USER_DATA, false, "/"), cfg));
-            out.cookies.push(build_set_cookie(&deletion(GUEST_DATA, false, "/"), cfg));
+            out.cookies
+                .push(build_set_cookie(&deletion(USER_TOKEN, true, "/"), cfg));
+            out.cookies
+                .push(build_set_cookie(&deletion(GUEST_TOKEN, true, "/"), cfg));
+            out.cookies
+                .push(build_set_cookie(&deletion(USER_DATA, false, "/"), cfg));
+            out.cookies
+                .push(build_set_cookie(&deletion(GUEST_DATA, false, "/"), cfg));
             out.cookies.push(build_set_cookie(
                 &deletion(REFRESH_TOKEN, true, &cfg.refresh_token_path),
                 cfg,
             ));
-            out.cookies.push(build_set_cookie(&deletion(USER_REFRESH_EXISTS, false, "/"), cfg));
-            out.cookies.push(build_set_cookie(&deletion(GUEST_REFRESH_EXISTS, false, "/"), cfg));
+            out.cookies.push(build_set_cookie(
+                &deletion(USER_REFRESH_EXISTS, false, "/"),
+                cfg,
+            ));
+            out.cookies.push(build_set_cookie(
+                &deletion(GUEST_REFRESH_EXISTS, false, "/"),
+                cfg,
+            ));
             return out;
         }
 
         // Independent conditions, mirroring the Apollo `willSendResponse` logic.
         if t.access_token_modified {
             if let Some(exp) = t.access_expiry() {
-                if let Ok(jwt) = self.signer.encrypt_access(&t.tokens, t.is_authenticated, exp) {
-                    let name = if t.is_authenticated { USER_TOKEN } else { GUEST_TOKEN };
+                if let Ok(jwt) = self
+                    .signer
+                    .encrypt_access(&t.tokens, t.is_authenticated, exp)
+                {
+                    let name = if t.is_authenticated {
+                        USER_TOKEN
+                    } else {
+                        GUEST_TOKEN
+                    };
                     out.cookies.push(build_set_cookie(
                         &CookieSpec {
                             name,
@@ -289,7 +310,11 @@ impl FederatedTokenPlugin {
         if t.value_modified {
             let subject = t.subject(self.signer.subject_token_key());
             if let Ok(jwt) = self.signer.sign_data(&t.values, subject.as_deref()) {
-                let name = if t.is_authenticated { USER_DATA } else { GUEST_DATA };
+                let name = if t.is_authenticated {
+                    USER_DATA
+                } else {
+                    GUEST_DATA
+                };
                 out.cookies.push(build_set_cookie(
                     &CookieSpec {
                         name,
