@@ -2,7 +2,9 @@ use std::sync::Mutex;
 
 use hive_router::async_trait;
 use hive_router::http::header::{HeaderName, HeaderValue};
-use hive_router::ntex::http::header::{HeaderValue as CookieHeaderValue, SET_COOKIE};
+use hive_router::ntex::http::header::{
+    HeaderName as ResponseHeaderName, HeaderValue as CookieHeaderValue, SET_COOKIE,
+};
 use hive_router::ntex::http::HeaderMap;
 use hive_router::plugins::{
     hooks::{
@@ -195,17 +197,20 @@ impl RouterPlugin for FederatedTokenPlugin {
             let Some(state) = end.context.get_ref::<TokenState>() else {
                 return end.proceed();
             };
-            let cookies = {
+            let response_tokens = {
                 let token = state.token.lock().unwrap();
-                self.build_response_cookies(&token)
+                self.build_response(&token)
             };
-            if cookies.is_empty() {
+            if response_tokens.is_empty() {
                 return end.proceed();
             }
             end.map_response(move |mut response| {
                 let headers = response.headers_mut();
-                for cookie in cookies {
+                for cookie in response_tokens.cookies {
                     headers.append(SET_COOKIE, cookie);
+                }
+                for (name, value) in response_tokens.headers {
+                    headers.insert(name, value);
                 }
                 response
             })
@@ -214,25 +219,47 @@ impl RouterPlugin for FederatedTokenPlugin {
     }
 }
 
+/// Tokens to write on the client response: `Set-Cookie` headers plus, when
+/// `set_response_headers` is enabled, the `x-*-token` headers carrying the same
+/// JWT values (mirroring the Node `CompositeTokenSource` of cookies + headers).
+struct ResponseTokens {
+    cookies: Vec<CookieHeaderValue>,
+    headers: Vec<(ResponseHeaderName, CookieHeaderValue)>,
+}
+
+impl ResponseTokens {
+    fn is_empty(&self) -> bool {
+        self.cookies.is_empty() && self.headers.is_empty()
+    }
+}
+
 impl FederatedTokenPlugin {
-    /// Mirrors the Apollo `willSendResponse` cookie logic: cookies are only
-    /// (re)written when a subgraph modified the token, and the user/guest cookie
-    /// variant is chosen by `is_authenticated`.
-    fn build_response_cookies(&self, t: &FederatedToken) -> Vec<CookieHeaderValue> {
+    /// Mirrors the Apollo `willSendResponse` logic: tokens are only (re)written
+    /// when a subgraph modified them, and the user/guest cookie variant is chosen
+    /// by `is_authenticated`. Each (re)issued JWT is emitted both as a cookie and
+    /// (when configured) as its `x-*-token` header, reusing the same value.
+    ///
+    /// Note: header emission is stateless — like the Node header source, it only
+    /// *sets* (re)issued tokens and performs no deletions, so a token destroy
+    /// clears cookies only.
+    fn build_response(&self, t: &FederatedToken) -> ResponseTokens {
         let cfg = &self.config;
-        let mut out = Vec::new();
+        let mut out = ResponseTokens {
+            cookies: Vec::new(),
+            headers: Vec::new(),
+        };
 
         if t.destroy_token {
-            out.push(build_set_cookie(&deletion(USER_TOKEN, true, "/"), cfg));
-            out.push(build_set_cookie(&deletion(GUEST_TOKEN, true, "/"), cfg));
-            out.push(build_set_cookie(&deletion(USER_DATA, false, "/"), cfg));
-            out.push(build_set_cookie(&deletion(GUEST_DATA, false, "/"), cfg));
-            out.push(build_set_cookie(
+            out.cookies.push(build_set_cookie(&deletion(USER_TOKEN, true, "/"), cfg));
+            out.cookies.push(build_set_cookie(&deletion(GUEST_TOKEN, true, "/"), cfg));
+            out.cookies.push(build_set_cookie(&deletion(USER_DATA, false, "/"), cfg));
+            out.cookies.push(build_set_cookie(&deletion(GUEST_DATA, false, "/"), cfg));
+            out.cookies.push(build_set_cookie(
                 &deletion(REFRESH_TOKEN, true, &cfg.refresh_token_path),
                 cfg,
             ));
-            out.push(build_set_cookie(&deletion(USER_REFRESH_EXISTS, false, "/"), cfg));
-            out.push(build_set_cookie(&deletion(GUEST_REFRESH_EXISTS, false, "/"), cfg));
+            out.cookies.push(build_set_cookie(&deletion(USER_REFRESH_EXISTS, false, "/"), cfg));
+            out.cookies.push(build_set_cookie(&deletion(GUEST_REFRESH_EXISTS, false, "/"), cfg));
             return out;
         }
 
@@ -241,7 +268,7 @@ impl FederatedTokenPlugin {
             if let Some(exp) = t.access_expiry() {
                 if let Ok(jwt) = self.signer.encrypt_access(&t.tokens, t.is_authenticated, exp) {
                     let name = if t.is_authenticated { USER_TOKEN } else { GUEST_TOKEN };
-                    out.push(build_set_cookie(
+                    out.cookies.push(build_set_cookie(
                         &CookieSpec {
                             name,
                             value: &jwt,
@@ -251,6 +278,7 @@ impl FederatedTokenPlugin {
                         },
                         cfg,
                     ));
+                    self.push_header(&mut out, "x-access-token", &jwt);
                 }
             }
         }
@@ -262,7 +290,7 @@ impl FederatedTokenPlugin {
             let subject = t.subject(self.signer.subject_token_key());
             if let Ok(jwt) = self.signer.sign_data(&t.values, subject.as_deref()) {
                 let name = if t.is_authenticated { USER_DATA } else { GUEST_DATA };
-                out.push(build_set_cookie(
+                out.cookies.push(build_set_cookie(
                     &CookieSpec {
                         name,
                         value: &jwt,
@@ -272,12 +300,13 @@ impl FederatedTokenPlugin {
                     },
                     cfg,
                 ));
+                self.push_header(&mut out, "x-data-token", &jwt);
             }
         }
 
         if t.refresh_token_modified && !t.refresh_tokens.is_empty() {
             if let Ok(jwt) = self.signer.encrypt_refresh(&t.refresh_tokens) {
-                out.push(build_set_cookie(
+                out.cookies.push(build_set_cookie(
                     &CookieSpec {
                         name: REFRESH_TOKEN,
                         value: &jwt,
@@ -287,12 +316,13 @@ impl FederatedTokenPlugin {
                     },
                     cfg,
                 ));
+                self.push_header(&mut out, "x-refresh-token", &jwt);
                 let exists = if t.is_authenticated {
                     USER_REFRESH_EXISTS
                 } else {
                     GUEST_REFRESH_EXISTS
                 };
-                out.push(build_set_cookie(
+                out.cookies.push(build_set_cookie(
                     &CookieSpec {
                         name: exists,
                         value: "1",
@@ -306,6 +336,18 @@ impl FederatedTokenPlugin {
         }
 
         out
+    }
+
+    /// Append an `x-*-token` response header when header emission is enabled.
+    /// A value that isn't a valid header (JWTs never are, in practice) is skipped.
+    fn push_header(&self, out: &mut ResponseTokens, name: &'static str, value: &str) {
+        if !self.config.set_response_headers {
+            return;
+        }
+        if let Ok(header) = CookieHeaderValue::from_str(value) {
+            out.headers
+                .push((ResponseHeaderName::from_static(name), header));
+        }
     }
 }
 
@@ -321,4 +363,127 @@ fn strip_bearer(value: String) -> String {
         .strip_prefix("Bearer ")
         .map(|s| s.to_string())
         .unwrap_or(value)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::PluginConfig;
+    use crate::token::AccessToken;
+    use serde_json::json;
+
+    fn plugin(set_response_headers: bool) -> FederatedTokenPlugin {
+        let config: PluginConfig = serde_json::from_value(json!({
+            "issuer": "http://localhost:4000",
+            "audience": "http://localhost:4000",
+            "cookie_domain": "localhost",
+            "encrypt_keys": [{ "id": "1", "secret": "12345678123456781234567812345678" }],
+            "sign_keys": [{ "id": "1", "secret": "87654321876543218765432187654321" }],
+            "set_response_headers": set_response_headers,
+        }))
+        .unwrap();
+        let signer = TokenSigner::from_config(&config).unwrap();
+        FederatedTokenPlugin { signer, config }
+    }
+
+    /// A token that a subgraph rotated: an access token + a refresh token, both
+    /// flagged modified, authenticated. Exercises all three header kinds.
+    fn rotated_token() -> FederatedToken {
+        let mut t = FederatedToken::new();
+        t.is_authenticated = true;
+        t.tokens.insert(
+            "commercetools".into(),
+            AccessToken {
+                token: "ct-token".into(),
+                exp: now_secs() + 3600,
+                sub: "customer-1".into(),
+            },
+        );
+        t.refresh_tokens
+            .insert("commercetools".into(), "refresh-xyz".into());
+        t.access_token_modified = true;
+        t.value_modified = true;
+        t.refresh_token_modified = true;
+        t
+    }
+
+    fn now_secs() -> i64 {
+        use std::time::{SystemTime, UNIX_EPOCH};
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64
+    }
+
+    fn header_names(out: &ResponseTokens) -> Vec<String> {
+        out.headers
+            .iter()
+            .map(|(name, _)| name.as_str().to_string())
+            .collect()
+    }
+
+    fn cookie_names(out: &ResponseTokens) -> Vec<String> {
+        out.cookies
+            .iter()
+            .filter_map(|c| c.to_str().ok())
+            .filter_map(|c| c.split('=').next().map(str::to_string))
+            .collect()
+    }
+
+    #[test]
+    fn emits_x_headers_alongside_cookies() {
+        let out = plugin(true).build_response(&rotated_token());
+
+        let mut names = header_names(&out);
+        names.sort();
+        assert_eq!(
+            names,
+            vec!["x-access-token", "x-data-token", "x-refresh-token"]
+        );
+
+        // Each header value equals the JWT written into the matching cookie.
+        for (name, value) in &out.headers {
+            let cookie_name = match name.as_str() {
+                "x-access-token" => USER_TOKEN,
+                "x-data-token" => USER_DATA,
+                "x-refresh-token" => REFRESH_TOKEN,
+                other => panic!("unexpected header {other}"),
+            };
+            let cookie = out
+                .cookies
+                .iter()
+                .filter_map(|c| c.to_str().ok())
+                .find(|c| c.starts_with(&format!("{cookie_name}=")))
+                .unwrap_or_else(|| panic!("no cookie for {name}"));
+            let cookie_value = cookie
+                .split(';')
+                .next()
+                .and_then(|kv| kv.split_once('='))
+                .map(|(_, v)| v)
+                .unwrap();
+            assert_eq!(cookie_value, value.to_str().unwrap());
+        }
+    }
+
+    #[test]
+    fn disabling_response_headers_keeps_cookies_only() {
+        let out = plugin(false).build_response(&rotated_token());
+        assert!(out.headers.is_empty(), "no x-headers when disabled");
+        // Cookies are unaffected.
+        assert!(cookie_names(&out).contains(&USER_TOKEN.to_string()));
+    }
+
+    #[test]
+    fn destroy_clears_cookies_and_emits_no_headers() {
+        let mut t = FederatedToken::new();
+        t.destroy_token = true;
+        let out = plugin(true).build_response(&t);
+
+        // Header emission is set-only (like the Node header source), so a destroy
+        // touches cookies only.
+        assert!(out.headers.is_empty());
+        let names = cookie_names(&out);
+        assert!(names.contains(&USER_TOKEN.to_string()));
+        assert!(names.contains(&REFRESH_TOKEN.to_string()));
+    }
 }

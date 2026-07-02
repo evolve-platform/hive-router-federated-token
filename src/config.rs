@@ -45,6 +45,15 @@ pub struct PluginConfig {
     /// The Apollo config used `token.tokens.commercetools?.sub`.
     #[serde(default = "default_subject_key")]
     pub subject_token_key: String,
+
+    /// Also emit the (re)issued tokens as `x-access-token` / `x-data-token` /
+    /// `x-refresh-token` response headers, alongside the `Set-Cookie` headers.
+    ///
+    /// The Node gateway used a `CompositeTokenSource` (cookies + headers), so
+    /// clients that read the tokens from headers instead of cookies relied on
+    /// these. Enabled by default to preserve that behaviour.
+    #[serde(default = "default_true")]
+    pub set_response_headers: bool,
 }
 
 impl PluginConfig {

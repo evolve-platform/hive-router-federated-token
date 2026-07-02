@@ -52,6 +52,10 @@ plugins:
       secure: true
       same_site: lax
       refresh_token_path: /graphql/auth
+      # Also mirror (re)issued tokens onto x-access-token / x-data-token /
+      # x-refresh-token response headers (like the Node CompositeTokenSource).
+      # Defaults to true.
+      set_response_headers: true
       encrypt_keys: [{ id: "1", secret: ${FEDERATED_TOKEN_ENCRYPT_KEY_1} }]
       sign_keys:    [{ id: "1", secret: ${FEDERATED_TOKEN_SIGN_KEY_1} }]
 ```
