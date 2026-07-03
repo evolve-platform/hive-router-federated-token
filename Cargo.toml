@@ -1,6 +1,6 @@
 [package]
 name = "hive-router-federated-token"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 license = "MIT"
 description = "Hive Router plugin porting @labdigital/federated-token gateway auth (JWE/JWS cookies + subgraph token round-trip)."

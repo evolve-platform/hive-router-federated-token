@@ -74,6 +74,21 @@ impl RouterPlugin for FederatedTokenPlugin {
 
         let mut token = FederatedToken::new();
 
+        // Refresh token: cookie, then header. Read first because its presence
+        // changes how we handle a failed access/data token below.
+        let refresh = cookies
+            .get(REFRESH_TOKEN)
+            .cloned()
+            .or_else(|| header_str(headers, "x-refresh-token"));
+
+        // The refresh cookie is path-scoped to `refresh_token_path`, so it is
+        // only present on refresh requests. When it is present the client is
+        // trying to recover from an expired session, so an expired/invalid
+        // access or data token must NOT abort the request — otherwise the
+        // refresh mutation can never run. This mirrors the Node setup where the
+        // refresh endpoint was separate from the data endpoint.
+        let refreshing = refresh.is_some();
+
         // Access token: authenticated cookie, then guest cookie, then header.
         let access = cookies
             .get(USER_TOKEN)
@@ -86,17 +101,15 @@ impl RouterPlugin for FederatedTokenPlugin {
                     token.tokens = tokens;
                     token.is_authenticated = is_authenticated;
                 }
+                // Ignore a bad access token while refreshing; otherwise surface
+                // it (401 expired / 400 invalid) so the client knows to refresh.
+                Err(_) if refreshing => {}
                 Err(e) => {
                     return payload.end_with_graphql_error(e.graphql_error(), e.status_code())
                 }
             }
         }
 
-        // Refresh token: cookie, then header.
-        let refresh = cookies
-            .get(REFRESH_TOKEN)
-            .cloned()
-            .or_else(|| header_str(headers, "x-refresh-token"));
         if let Some(refresh) = refresh {
             match self.signer.decrypt_refresh(&refresh) {
                 Ok(refresh_tokens) => token.refresh_tokens = refresh_tokens,
@@ -118,6 +131,7 @@ impl RouterPlugin for FederatedTokenPlugin {
         if let Some(data) = data {
             match self.signer.verify_data(&data) {
                 Ok(values) => token.values = values,
+                Err(_) if refreshing => {}
                 Err(e) => {
                     return payload.end_with_graphql_error(e.graphql_error(), e.status_code())
                 }
