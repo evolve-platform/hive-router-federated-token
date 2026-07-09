@@ -1866,7 +1866,7 @@ checksum = "0cc23270f6e1808e30a928bdc84dea0b9b4136a8bc82338574f23baf47bbd280"
 [[package]]
 name = "graphql-tools"
 version = "0.5.6"
-source = "git+https://github.com/graphql-hive/router?tag=hive-router%2Fv0.0.77#bef4dc59bed44a9eef818080cb699f42b0b6a720"
+source = "git+https://github.com/graphql-hive/router?tag=hive-router%2Fv0.0.81#bccad869423014c6b2530ecf61b1e1b6b3d334a7"
 dependencies = [
  "combine",
  "itoa",
@@ -2031,7 +2031,7 @@ checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
 [[package]]
 name = "hive-console-sdk"
 version = "0.3.17"
-source = "git+https://github.com/graphql-hive/router?tag=hive-router%2Fv0.0.77#bef4dc59bed44a9eef818080cb699f42b0b6a720"
+source = "git+https://github.com/graphql-hive/router?tag=hive-router%2Fv0.0.81#bccad869423014c6b2530ecf61b1e1b6b3d334a7"
 dependencies = [
  "ahash",
  "anyhow",
@@ -2069,8 +2069,8 @@ dependencies = [
 
 [[package]]
 name = "hive-router"
-version = "0.0.77"
-source = "git+https://github.com/graphql-hive/router?tag=hive-router%2Fv0.0.77#bef4dc59bed44a9eef818080cb699f42b0b6a720"
+version = "0.0.81"
+source = "git+https://github.com/graphql-hive/router?tag=hive-router%2Fv0.0.81#bccad869423014c6b2530ecf61b1e1b6b3d334a7"
 dependencies = [
  "ahash",
  "anyhow",
@@ -2150,8 +2150,8 @@ dependencies = [
 
 [[package]]
 name = "hive-router-config"
-version = "0.1.6"
-source = "git+https://github.com/graphql-hive/router?tag=hive-router%2Fv0.0.77#bef4dc59bed44a9eef818080cb699f42b0b6a720"
+version = "0.1.7"
+source = "git+https://github.com/graphql-hive/router?tag=hive-router%2Fv0.0.81#bccad869423014c6b2530ecf61b1e1b6b3d334a7"
 dependencies = [
  "config",
  "envconfig",
@@ -2187,8 +2187,8 @@ dependencies = [
 
 [[package]]
 name = "hive-router-internal"
-version = "0.0.34"
-source = "git+https://github.com/graphql-hive/router?tag=hive-router%2Fv0.0.77#bef4dc59bed44a9eef818080cb699f42b0b6a720"
+version = "0.0.35"
+source = "git+https://github.com/graphql-hive/router?tag=hive-router%2Fv0.0.81#bccad869423014c6b2530ecf61b1e1b6b3d334a7"
 dependencies = [
  "ahash",
  "async-trait",
@@ -2229,8 +2229,8 @@ dependencies = [
 
 [[package]]
 name = "hive-router-plan-executor"
-version = "6.20.2"
-source = "git+https://github.com/graphql-hive/router?tag=hive-router%2Fv0.0.77#bef4dc59bed44a9eef818080cb699f42b0b6a720"
+version = "6.21.1"
+source = "git+https://github.com/graphql-hive/router?tag=hive-router%2Fv0.0.81#bccad869423014c6b2530ecf61b1e1b6b3d334a7"
 dependencies = [
  "ahash",
  "async-stream",
@@ -2276,8 +2276,8 @@ dependencies = [
 
 [[package]]
 name = "hive-router-query-planner"
-version = "2.10.5"
-source = "git+https://github.com/graphql-hive/router?tag=hive-router%2Fv0.0.77#bef4dc59bed44a9eef818080cb699f42b0b6a720"
+version = "2.10.9"
+source = "git+https://github.com/graphql-hive/router?tag=hive-router%2Fv0.0.81#bccad869423014c6b2530ecf61b1e1b6b3d334a7"
 dependencies = [
  "bitflags 2.13.0",
  "graphql-tools",
