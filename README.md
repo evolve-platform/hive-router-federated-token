@@ -16,8 +16,8 @@ Add it to your custom router binary and register the plugin:
 ```toml
 # Cargo.toml — the hive-router version MUST match this crate's
 [dependencies]
-hive-router = { git = "https://github.com/graphql-hive/router", tag = "hive-router/v0.0.77" }
-hive-router-federated-token = { git = "https://github.com/evolve-platform/hive-router-federated-token", tag = "v0.1.0" }
+hive-router = { git = "https://github.com/graphql-hive/router", tag = "hive-router/v0.3.0" }
+hive-router-federated-token = { git = "https://github.com/evolve-platform/hive-router-federated-token", tag = "v0.2.0" }
 ```
 
 ```rust

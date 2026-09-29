@@ -9,7 +9,7 @@ use hive_router::ntex::http::HeaderMap;
 use hive_router::plugins::{
     hooks::{
         on_graphql_params::{OnGraphQLParamsStartHookPayload, OnGraphQLParamsStartHookResult},
-        on_http_request::{OnHttpRequestHookPayload, OnHttpRequestHookResult},
+        on_http_request::{OnHttpRequestHookFuture, OnHttpRequestHookPayload},
         on_plugin_init::{OnPluginInitPayload, OnPluginInitResult},
         on_subgraph_execute::{
             OnSubgraphExecuteStartHookPayload, OnSubgraphExecuteStartHookResult,
@@ -210,29 +210,31 @@ impl RouterPlugin for FederatedTokenPlugin {
     fn on_http_request<'exec>(
         &'exec self,
         payload: OnHttpRequestHookPayload<'exec>,
-    ) -> OnHttpRequestHookResult<'exec> {
-        payload.on_end(move |end| {
-            let Some(state) = end.context.get_ref::<TokenState>() else {
-                return end.proceed();
-            };
-            let response_tokens = {
-                let token = state.token.lock().unwrap();
-                self.build_response(&token)
-            };
-            if response_tokens.is_empty() {
-                return end.proceed();
-            }
-            end.map_response(move |mut response| {
-                let headers = response.headers_mut();
-                for cookie in response_tokens.cookies {
-                    headers.append(SET_COOKIE, cookie);
+    ) -> OnHttpRequestHookFuture<'exec> {
+        Box::pin(async move {
+            payload.on_end(move |end| {
+                let Some(state) = end.context.get_ref::<TokenState>() else {
+                    return end.proceed();
+                };
+                let response_tokens = {
+                    let token = state.token.lock().unwrap();
+                    self.build_response(&token)
+                };
+                if response_tokens.is_empty() {
+                    return end.proceed();
                 }
-                for (name, value) in response_tokens.headers {
-                    headers.insert(name, value);
-                }
-                response
+                end.map_response(move |mut response| {
+                    let headers = response.headers_mut();
+                    for cookie in response_tokens.cookies {
+                        headers.append(SET_COOKIE, cookie);
+                    }
+                    for (name, value) in response_tokens.headers {
+                        headers.insert(name, value);
+                    }
+                    response
+                })
+                .proceed()
             })
-            .proceed()
         })
     }
 }
