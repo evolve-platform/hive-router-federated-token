@@ -36,3 +36,74 @@ jobs:
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       - run: cargo clippy --all-targets --all-features
       - run: cargo test --all-features
+
+  # Scan Cargo.lock at the release tag. Nothing is built or executed here, and
+  # the DT key lives only in the next job.
+  sbom:
+    name: SBOM
+    needs: [fmt, test]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - uses: anchore/sbom-action/download-syft@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
+        id: syft
+
+      # Tag selects the lockfile cataloger. Names are rejected by --select-catalogers.
+      - name: Generate SBOM
+        env:
+          SYFT: ${{ steps.syft.outputs.cmd }}
+          SYFT_FILE_METADATA_SELECTION: none
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          "$SYFT" dir:. --select-catalogers rust \
+            --source-name hive-router-federated-token \
+            --source-version "$TAG" \
+            -o cyclonedx-json@1.6=hive-router-federated-token.cdx.json
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sbom-cyclonedx
+          path: hive-router-federated-token.cdx.json
+          retention-days: 7
+
+  # Separate job so the DT key is never present while repo files are checked out.
+  dependencytrack:
+    name: Upload SBOM to DependencyTrack
+    needs: sbom
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: sbom-cyclonedx
+
+      # Each release becomes a version under the "oss/rust/hive-router-federated-token"
+      # library container (OSS > OSS Rust), which rolls up the latest version.
+      - name: Upload SBOM to DependencyTrack
+        env:
+          DT_API_KEY: ${{ secrets.DEPENDENCYTRACK_OSS_APIKEY }}
+          DT_URL: https://dependencytrack-api.labdigital.nl:8443
+          PROJECT: oss/rust/hive-router-federated-token
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          if [ -z "${DT_API_KEY}" ]; then
+            echo "::error::DEPENDENCYTRACK_OSS_APIKEY is not available to this repo"
+            exit 1
+          fi
+          curl -sS --fail-with-body -X POST "${DT_URL}/api/v1/bom" \
+            -H "X-Api-Key: ${DT_API_KEY}" \
+            -F "autoCreate=true" \
+            -F "projectName=${PROJECT}" \
+            -F "projectVersion=${TAG}" \
+            -F "parentName=${PROJECT}" \
+            -F "isLatest=true" \
+            -F "bom=@hive-router-federated-token.cdx.json"
